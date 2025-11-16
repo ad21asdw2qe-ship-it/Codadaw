@@ -1,53 +1,47 @@
-name: SA-MP Monitor
-on:
-  schedule:
-    - cron: '*/1 * * * *'
-  workflow_dispatch:
+import socket
+import struct
+import time
+import requests
+import json
 
-jobs:
-  monitor:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download servers.json
-        run: curl -o servers.json "http://a1189822.xsph.ru/servers.json"
+def update_ftp(online):
+    try:
+        response = requests.get('http://a1189822.xsph.ru/servers.json')
+        servers = response.json()
+        for server in servers:
+            server['online'] = online
+            
+        files = {'file': ('servers.json', json.dumps(servers, indent=2))}
+        auth = ('blaze@a1189822', 'OsoW_123')
+        requests.put('ftp://a1189822.xsph.ru/servers.json', files=files, auth=auth)
+        print(f'✅ Обновлен: {online}')
+    except Exception as e:
+        print(f'❌ Ошибка: {e}')
+
+def check_server():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(5)
+        packet = b'SAMP' + bytes([193,23,220,249]) + struct.pack('<H', 1171) + b'i'
+        sock.sendto(packet, ('193.23.220.249', 1171))
+        response, addr = sock.recvfrom(4096)
+        sock.close()
         
-      - name: Check server online
-        run: |
-          python3 -c "
-          import socket, struct, json, datetime
-          
-          # Делаем 2 запроса подряд чтобы обновить кэш
-          players = 0
-          for i in range(2):
-              try:
-                  sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                  sock.settimeout(5)
-                  packet = b'SAMP' + bytes([193,23,220,249]) + struct.pack('<H', 1171) + b'i'
-                  sock.sendto(packet, ('193.23.220.249', 1171))
-                  response, addr = sock.recvfrom(4096)
-                  
-                  if response[10] == 105:
-                      current_players = struct.unpack('<H', response[12:14])[0]
-                      print(f'🟢 Запрос {i+1}: {current_players} игроков')
-                      players = current_players  # Берем последний результат
-                      
-                  time.sleep(1)
-                  
-              except Exception as e:
-                  print(f'❌ Ошибка: {e}')
-          
-          print(f'🎯 Финальный онлайн: {players} игроков')
-          
-          # Обновляем JSON
-          with open('servers.json', 'r') as f:
-              servers = json.load(f)
-          
-          for server in servers:
-              server['online'] = players
-          
-          with open('servers.json', 'w') as f:
-              json.dump(servers, f, indent=4)
-          "
-          
-      - name: Upload to FTP
-        run: curl -T servers.json --user blaze@a1189822:OsoW_123 "ftp://a1189822.xsph.ru/public_html/servers.json"
+        if response[10] == 105:
+            return struct.unpack('<H', response[12:14])[0]
+    except:
+        return 0
+    return 0
+
+print('🟢 Мониторинг запущен')
+last_online = 0
+
+while True:
+    online = check_server()
+    if online != last_online:
+        print(f'🔄 Изменился: {last_online} -> {online}')
+        update_ftp(online)
+        last_online = online
+    else:
+        print(f'⏳ Онлайн: {online}')
+    time.sleep(5)
