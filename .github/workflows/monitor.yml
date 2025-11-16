@@ -8,33 +8,37 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Download servers.json from FTP
-        run: |
-          curl -o servers.json "http://a1189822.xsph.ru/servers.json"
+      - name: Download servers.json
+        run: curl -o servers.json "http://a1189822.xsph.ru/servers.json"
         
-      - name: Check server online and update JSON
+      - name: Check server online
         run: |
           python3 -c "
           import socket, struct, json, datetime
           
-          # Проверяем онлайн
-          try:
-              sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-              sock.settimeout(5)
-              packet = b'SAMP' + bytes([193,23,220,249]) + struct.pack('<H', 1171) + b'i'
-              sock.sendto(packet, ('193.23.220.249', 1171))
-              response, addr = sock.recvfrom(4096)
-              if response[10] == 105:
-                  players = struct.unpack('<H', response[12:14])[0]
-                  print(f'🟢 {datetime.datetime.now().strftime(\"%H:%M:%S\")} | Онлайн: {players} игроков')
-              else:
-                  players = 0
-                  print('❌ Неверный ответ')
-          except Exception as e:
-              players = 0
-              print(f'❌ Ошибка: {e}')
+          # Делаем 2 запроса подряд чтобы обновить кэш
+          players = 0
+          for i in range(2):
+              try:
+                  sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                  sock.settimeout(5)
+                  packet = b'SAMP' + bytes([193,23,220,249]) + struct.pack('<H', 1171) + b'i'
+                  sock.sendto(packet, ('193.23.220.249', 1171))
+                  response, addr = sock.recvfrom(4096)
+                  
+                  if response[10] == 105:
+                      current_players = struct.unpack('<H', response[12:14])[0]
+                      print(f'🟢 Запрос {i+1}: {current_players} игроков')
+                      players = current_players  # Берем последний результат
+                      
+                  time.sleep(1)
+                  
+              except Exception as e:
+                  print(f'❌ Ошибка: {e}')
           
-          # Обновляем servers.json
+          print(f'🎯 Финальный онлайн: {players} игроков')
+          
+          # Обновляем JSON
           with open('servers.json', 'r') as f:
               servers = json.load(f)
           
@@ -43,10 +47,7 @@ jobs:
           
           with open('servers.json', 'w') as f:
               json.dump(servers, f, indent=4)
-          
-          print('✅ servers.json обновлен')
           "
           
       - name: Upload to FTP
-        run: |
-          curl -T servers.json --user blaze@a1189822:OsoW_123 "ftp://a1189822.xsph.ru/public_html/servers.json"
+        run: curl -T servers.json --user blaze@a1189822:OsoW_123 "ftp://a1189822.xsph.ru/public_html/servers.json"
