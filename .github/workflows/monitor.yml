@@ -1,17 +1,22 @@
 name: SA-MP Monitor
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/1 * * * *'
   workflow_dispatch:
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Check server online
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Check server online and update JSON
         run: |
           python3 -c "
-          import socket, struct
+          import socket, struct, json, datetime
+          
+          # Проверяем онлайн
           try:
               sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
               sock.settimeout(5)
@@ -20,9 +25,31 @@ jobs:
               response, addr = sock.recvfrom(4096)
               if response[10] == 105:
                   players = struct.unpack('<H', response[12:14])[0]
-                  print(f'🟢 Онлайн: {players} игроков')
+                  print(f'🟢 {datetime.datetime.now().strftime(\"%H:%M:%S\")} | Онлайн: {players} игроков')
               else:
+                  players = 0
                   print('❌ Неверный ответ')
           except Exception as e:
+              players = 0
               print(f'❌ Ошибка: {e}')
+          
+          # Обновляем servers.json
+          with open('servers.json', 'r') as f:
+              servers = json.load(f)
+          
+          for server in servers:
+              server['online'] = players
+          
+          with open('servers.json', 'w') as f:
+              json.dump(servers, f, indent=4)
+          
+          print('✅ servers.json обновлен')
           "
+          
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add servers.json
+          git commit -m "Update online: ${{ job.status }}" || exit 0
+          git push
