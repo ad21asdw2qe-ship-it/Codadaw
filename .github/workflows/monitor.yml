@@ -8,8 +8,9 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Download servers.json from FTP
+        run: |
+          curl -o servers.json "http://a1189822.xsph.ru/servers.json"
         
       - name: Check server online and update JSON
         run: |
@@ -46,10 +47,6 @@ jobs:
           print('✅ servers.json обновлен')
           "
           
-      - name: Commit and push changes
+      - name: Upload to FTP
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add servers.json
-          git commit -m "Update online: ${{ job.status }}" || exit 0
-          git push
+          curl -T servers.json --user blaze@a1189822:OsoW_123 "ftp://a1189822.xsph.ru/public_html/servers.json"
